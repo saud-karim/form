@@ -1,0 +1,49 @@
+{
+    "name": "contact-form/email-attachments",
+    "description": "A web contact form with file attachments and email functionality",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Contact Form Developer",
+            "email": "developer@example.com"
+        }
+    ], 
+    "require": {
+        "php": ">=7.4",
+        "phpmailer/phpmailer": "^6.8"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "ContactForm\\": "src/"
+        }
+    },
+    "config": {
+        "vendor-dir": "vendor",
+        "preferred-install": "dist",
+        "optimize-autoloader": true
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "echo 'PHPMailer installed successfully!'",
+            "echo 'Update send_email.php to use PHPMailer for better email delivery.'"
+        ],
+        "test": "phpunit tests/",
+        "check-security": "composer audit"
+    },
+    "support": {
+        "issues": "https://github.com/username/contact-form/issues",
+        "docs": "README.md"
+    },
+    "keywords": [
+        "contact-form",
+        "email",
+        "file-upload",
+        "php",
+        "phpmailer",
+        "web-form"
+    ]
+} 
