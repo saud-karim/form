@@ -6,20 +6,24 @@
  * handles file uploads, and sends emails with attachments.
  */
 
+// Prevent any output before JSON response
+ob_start();
+
 // Set content type to JSON for API responses
 header('Content-Type: application/json');
 
 // Enable error reporting for debugging (disable in production)
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0); // Disable display errors to prevent HTML output
+ini_set('log_errors', 1);
 
 // Configuration - Update these values according to your setup
 $config = [
     'recipient_email' => 'recipient@example.com',    // Change this to your email
     'recipient_name' => 'Contact Form Handler',
     'sender_email' => 'noreply@yourdomain.com',      // Change this to your domain
-    'sender_name' => 'Website Contact Form',
-    'subject' => 'New Contact Form Submission',
+    'sender_name' => 'Driver License Registration System',
+    'subject' => 'New Driver License Registration',
     'max_file_size' => 5 * 1024 * 1024,             // 5MB max file size
     'allowed_types' => ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
     'upload_dir' => 'temp_uploads/'                   // Temporary upload directory
@@ -40,6 +44,14 @@ function sanitizeInput($data) {
  */
 function validateEmail($email) {
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/**
+ * Validate date format (YYYY-MM-DD)
+ */
+function validateDate($date) {
+    $d = DateTime::createFromFormat('Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
 }
 
 /**
@@ -119,20 +131,74 @@ function cleanupFiles($files) {
     }
 }
 
+/**
+ * Send JSON response and exit
+ */
+function sendJsonResponse($success, $message) {
+    // Clear any previous output
+    ob_clean();
+    
+    // Ensure we're sending JSON
+    header('Content-Type: application/json');
+    
+    echo json_encode([
+        'success' => $success,
+        'message' => $message
+    ]);
+    
+    exit;
+}
+
+/**
+ * Handle fatal errors and return JSON
+ */
+function handleFatalError() {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_CORE_WARNING, E_COMPILE_ERROR, E_COMPILE_WARNING])) {
+        sendJsonResponse(false, 'A server error occurred. Please try again later.');
+    }
+}
+
+// Register fatal error handler
+register_shutdown_function('handleFatalError');
+
 // Only process POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit;
+    sendJsonResponse(false, 'Method not allowed');
 }
 
 try {
     // Validate and sanitize form inputs
+    $name = sanitizeInput($_POST['name'] ?? '');
+    $startDate = sanitizeInput($_POST['start_date'] ?? '');
+    $expDate = sanitizeInput($_POST['exp_date'] ?? '');
     $department = sanitizeInput($_POST['department'] ?? '');
     $project = sanitizeInput($_POST['project'] ?? '');
     
     // Validation
     $errors = [];
+    
+    if (empty($name)) {
+        $errors[] = 'Full name is required';
+    }
+    
+    if (empty($startDate)) {
+        $errors[] = 'License issue date is required';
+    } elseif (!validateDate($startDate)) {
+        $errors[] = 'Invalid license issue date format';
+    }
+    
+    if (empty($expDate)) {
+        $errors[] = 'License expiry date is required';
+    } elseif (!validateDate($expDate)) {
+        $errors[] = 'Invalid license expiry date format';
+    }
+    
+    // Check if expiry date is after start date
+    if (!empty($startDate) && !empty($expDate) && strtotime($expDate) <= strtotime($startDate)) {
+        $errors[] = 'License expiry date must be after issue date';
+    }
     
     if (empty($department) || !in_array($department, ['HR', 'IT', 'Finance', 'Marketing'])) {
         $errors[] = 'Valid department selection is required';
@@ -152,8 +218,7 @@ try {
     }
     
     if (!empty($errors)) {
-        echo json_encode(['success' => false, 'message' => implode(', ', $errors)]);
-        exit;
+        sendJsonResponse(false, implode(', ', $errors));
     }
     
     // Create upload directory if it doesn't exist
@@ -203,8 +268,23 @@ try {
     <body>
         <div class='container'>
             <div class='header'>
-                <h2>New Contact Form Submission</h2>
+                <h2>New Driver License Registration</h2>
                 <p>Received on: " . date('Y-m-d H:i:s') . "</p>
+            </div>
+            
+            <div class='field'>
+                <div class='label'>Full Name:</div>
+                <div class='value'>{$name}</div>
+            </div>
+            
+            <div class='field'>
+                <div class='label'>License Issue Date:</div>
+                <div class='value'>{$startDate}</div>
+            </div>
+            
+            <div class='field'>
+                <div class='label'>License Expiry Date:</div>
+                <div class='value'>{$expDate}</div>
             </div>
             
             <div class='field'>
@@ -218,11 +298,11 @@ try {
             </div>
             
             <div class='field'>
-                <div class='label'>Attachments:</div>
+                <div class='label'>License Images:</div>
                 <div class='value'>
                     <ul>
-                        <li>" . $attachments[0]['name'] . "</li>
-                        <li>" . $attachments[1]['name'] . "</li>
+                        <li>Front Side: " . $attachments[0]['name'] . "</li>
+                        <li>Back Side: " . $attachments[1]['name'] . "</li>
                     </ul>
                 </div>
             </div>
@@ -244,15 +324,9 @@ try {
     cleanupFiles($uploadedFiles);
     
     if ($emailSent) {
-        echo json_encode([
-            'success' => true, 
-            'message' => 'Your message has been sent successfully! We will get back to you soon.'
-        ]);
+        sendJsonResponse(true, 'Your driver license registration has been submitted successfully!');
     } else {
-        echo json_encode([
-            'success' => false, 
-            'message' => 'Failed to send email. Please try again later or contact us directly.'
-        ]);
+        sendJsonResponse(false, 'Failed to submit registration. Please try again later or contact us directly.');
     }
     
 } catch (Exception $e) {
@@ -264,9 +338,6 @@ try {
     // Log error (in production, log to file instead of displaying)
     error_log("Contact form error: " . $e->getMessage());
     
-    echo json_encode([
-        'success' => false, 
-        'message' => 'An error occurred while processing your request. Please try again later.'
-    ]);
+    sendJsonResponse(false, 'An error occurred while processing your request. Please try again later.');
 }
 ?> 
